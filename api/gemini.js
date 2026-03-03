@@ -1,41 +1,30 @@
-export default async function handler(req, res) {
-  const API_KEY = process.env.GEMINI_API_KEY;
+import { GoogleGenAI, ThinkingLevel } from "@google/genai";
+
+export default async function handler(req: any, res: any) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
 
   const { input, locale } = req.body;
 
-  const languageName =
-    new Intl.DisplayNames(["en"], { type: "language" }).of(
-      locale.split("-")[0]
-    ) || "English";
+  const ai = new GoogleGenAI({
+    apiKey: process.env.GEMINI_API_KEY!,
+  });
 
-  const systemInstruction = `You are an elite fact-checker.
-Respond ONLY in JSON format.
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: `Verify this: ${input}`,
+      config: {
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+      },
+    });
 
-{
-  "veracity": "True" | "False" | "Misleading" | "Unverified" | "Partially True",
-  "confidence": number,
-  "summary": "1 sentence verdict in ${languageName}.",
-  "analysis": "Short markdown analysis in ${languageName}.",
-  "sources": []
-}`;
+    const result = JSON.parse(response.text || "{}");
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: `Verify this: ${input}` }] }],
-        generationConfig: { response_mime_type: "application/json" },
-        systemInstruction: {
-          parts: [{ text: systemInstruction }],
-        },
-      }),
-    }
-  );
-
-  const data = await response.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
-
-  res.status(200).json(JSON.parse(text));
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "Gemini failed" });
+  }
 }
